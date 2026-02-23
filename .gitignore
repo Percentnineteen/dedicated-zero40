@@ -3,3 +3,4 @@
 *.elf
 build
 releases
+*.sw[n-p]

@@ -1909,8 +1909,7 @@ static void App_menu(void) {
 		"ARCHIVE",
 	};
 
-  char* save_slots[] = {"AUTO", "1", "2", "3"};
-  char* load_slots[] = {"AUTO", "1", "2", "3"};
+  char* save_slots[] = {"AUTO", "1", "2", "3", "4", "5", "6", "7"};
 	
 	int menu_at = SDL_GetTicks();
 	int selected = 0;
@@ -2014,14 +2013,14 @@ static void App_menu(void) {
             if (selected == 0 || (selected == 1 && current == app.current)) {
               selected_slot-=1;
               if (selected_slot < 0) {
-                selected_slot = NUMBER_OF(load_slots)-1;
+                selected_slot = NUMBER_OF(save_slots)-1;
               }
               dirty = 1;
             }
           } else if (btn == JOY_R1) {
             if (selected == 0 || (selected == 1 && current == app.current)) {
               selected_slot+=1;
-              if (selected_slot >= NUMBER_OF(load_slots)) {
+              if (selected_slot >= NUMBER_OF(save_slots)) {
                 selected_slot = 0;
               }
               dirty = 1;
@@ -2199,7 +2198,6 @@ static void App_menu(void) {
 				oh = 40;
 			
 				AA_rect(x-8,y-8,8+w+8,8+h+8, 0, TRIAD_ALPHA(BLACK_TRIAD,0x40));
-				AA_rect(x-8,y-8,8+w+8,8+h+8, 0, YELLOW_COLOR);
 			
 				for (int i=0; i<count; i++) {
 					Font_renderFunc renderer = Font_shadowText;
@@ -2217,43 +2215,42 @@ static void App_menu(void) {
 
         int top_pad=8;
         int pad=4;
-        int by=y+h+top_pad+2*pad;
+        int space=4;
+        y=y+h+top_pad+2*pad;
         char** slots;
         int slot_count = 0;
-        if (current==app.current && selected == 0) {
-          slots = &save_slots[1];
-          slot_count = NUMBER_OF(save_slots)-1;
-        } else if ((current==app.current && selected == 1) || selected == 0) {
-          slots = load_slots;
-          slot_count = NUMBER_OF(load_slots);
-        }
+        if (selected == 0 || (current==app.current && selected == 1)) {
+          slots = save_slots;
+          slot_count = NUMBER_OF(save_slots);
 
-        int bw = 0;
-        int bh = 0;
-        int bx = x;
-        for (int i=0; i<slot_count; i++) {
-          Font_getTextSize(font16, slots[i], &w, &h);
-          bw += w+2;
-          if (h>bh) bh = h;
-        }
-        bh-=2;
-        AA_rect(bx-pad,by-pad,bw+(slot_count + 1)*pad+2,bh+2*pad, 0, YELLOW_COLOR); //TRIAD_ALPHA(BLACK_TRIAD,0x40)
-        int pw=0;
-        for (int i=0; i<slot_count; i++) {
-          Font_renderFunc renderer = Font_shadowText;
-          SDL_Color color = WHITE_COLOR;
-          int text_offset = 0;
-          if (i==selected_slot) {
-            renderer = Font_renderText;
-            color = DARK_COLOR;
-            int cur_w;
-            Font_getTextSize(font16, slots[i], &cur_w, NULL);
-            AA_rect(bx+pw+(i-0.5)*(pad+2),by-0.5*pad,cur_w+1.5*pad,bh+pad, 0, GREEN_COLOR); //TRIAD_ALPHA(BLACK_TRIAD,0x40)
-            renderer(app.renderer, font16, slots[i], (bx+=pw)+i*(pad+2), by+1, color);
-          } else {
-            renderer(app.renderer, font16, slots[i], (bx+=pw)+i*(pad+2), by, color);
+          int bw = 0, bh = 0;
+          for (int i=0; i<slot_count; i++) {
+            Font_getTextSize(font16, slots[i], &w, &h);
+            bw += w;
+            if (h>bh) bh = h;
           }
-          Font_getTextSize(font16, slots[i], &pw, NULL);
+          bh-=2;
+          AA_rect(x-pad,y-pad,bw+(slot_count + 1)*pad+(slot_count - 1)*space+1,bh+2*pad, 0, TRIAD_ALPHA(BLACK_TRIAD,0x40));
+          int pw=0;
+          int v_offset=0;
+          for (int i=0; i<slot_count; i++) {
+            Font_renderFunc renderer = Font_shadowText;
+            SDL_Color color = WHITE_COLOR;
+            int cur_w;
+
+            Font_getTextSize(font16, slots[i], &cur_w, NULL);
+            if (i==selected_slot) {
+              renderer = Font_renderText;
+              color = DARK_COLOR;
+              AA_rect(x+pw+(i-0.5)*pad+i*space+2,y-0.5*pad+2,cur_w+1*pad,bh+pad, 0, TRIAD_ALPHA(BLACK_TRIAD,0xff));
+              AA_rect(x+pw+(i-0.5)*pad+i*space,y-0.5*pad,cur_w+1*pad,bh+pad, 0, TRIAD_ALPHA(WHITE_TRIAD,0xff));
+              v_offset=1;
+            } else {
+              v_offset=0;
+            }
+            renderer(app.renderer, font16, slots[i], x+pw+i*pad+i*space, y+v_offset, color);
+            pw += cur_w;
+          }
         }
 
 			}

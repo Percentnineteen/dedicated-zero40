@@ -15,6 +15,9 @@
 #include <SDL2/SDL_image.h>
 #include <alsa/asoundlib.h>
 
+#include <sys/stat.h>
+#include <sys/types.h>
+
 // --------------------------------------------
 
 #define CEIL_TO(x, n) (((x) + (n) - 1) / (n) * (n))
@@ -1040,7 +1043,7 @@ enum {
 	SNAP_RESET,
 };
 
-static void App_screenshot(int game, int screen, int snap);
+static void App_screenshot(int game, int slot, int screen, int snap);
 static void App_battery(int battery, int is_charging, int shadowed);
 static  int App_capture(const char* path);
 static void App_quit(void);
@@ -1098,13 +1101,13 @@ static void App_sync(int force) {
 	
 	app.synced = 1;
 }
-static void App_load(void) {
-	drastic_load_state(0);
+static void App_load(int slot) {
+	drastic_load_state(slot);
 }
-static void App_save(void) {
-	App_screenshot(app.current, 0, SNAP_SAVE);
-	App_screenshot(app.current, 1, SNAP_SAVE);
-	drastic_save_state(0);
+static void App_save(int slot) {
+	App_screenshot(app.current, slot, 0, SNAP_SAVE);
+	App_screenshot(app.current, slot, 1, SNAP_SAVE);
+	drastic_save_state(slot);
 }
 static void App_reset(void) {
 	drastic_audio_pause(0);
@@ -1154,7 +1157,7 @@ static void Device_sleep(void) {
 	Settings_save();
 	
 	drastic_audio_pause(1);
-	App_save();
+	App_save(0);
 	drastic_await_save();
 
 	#define POWEROFF_TIMEOUT 2 * 60 * 1000 // two minutes
@@ -1219,7 +1222,7 @@ static void Device_poweroff(void) {
 	// App_capture("/mnt/UDISK/capture.bmp");
 	
 	raw_vol(0);
-	App_save();
+	App_save(0);
 	unlink("/tmp/exec_loop");
 	Device_setLED(1);
 	drastic_quit();
@@ -1421,7 +1424,7 @@ static void App_set(int i) {
 	SDL_Log("app.game_name: %s", app.game_name);
 }
 
-static void App_screenshot(int game, int screen, int snap) {
+static void App_screenshot(int game, int slot, int screen, int snap) {
 	if (!app.screens[screen]) return;
 	SDL_Texture* texture = app.screens[screen];
 	
@@ -1432,7 +1435,7 @@ static void App_screenshot(int game, int screen, int snap) {
 	if (dot && dot!=game_name) *dot = '\0';
 	
 	char path[MAX_PATH];
-	sprintf(path, USERDATA_PATH "/screenshots/%s-%i.bmp", game_name, screen);
+	sprintf(path, USERDATA_PATH "/screenshots/%s-%i-%i.bmp", game_name, slot, screen);
 	// SDL_Log("screenshot: %s", path);
 	
 	void *pixels = NULL;
@@ -1452,7 +1455,7 @@ static void App_screenshot(int game, int screen, int snap) {
 
 	SDL_UnlockTexture(texture);
 }
-static void App_preview(int game, int screen, int snap) {
+static void App_preview(int game, int slot, int screen, int snap) {
 	if (!app.preview[screen]) return;
 	SDL_Texture* texture = app.preview[screen];
 	
@@ -1461,9 +1464,13 @@ static void App_preview(int game, int screen, int snap) {
 	else strcpy(game_name, app.items[game].name);
 	char *dot = strrchr(game_name, '.');
 	if (dot && dot!=game_name) *dot = '\0';
+
+  if (snap==SNAP_CURRENT || snap==SNAP_RESET) {
+    slot=0;
+  }
 	
 	char path[MAX_PATH];
-	sprintf(path, USERDATA_PATH "/screenshots/%s-%i.bmp", game_name, screen);
+	sprintf(path, USERDATA_PATH "/screenshots/%s-%i-%i.bmp", game_name, slot, screen);
 	if (snap==SNAP_RESET || !exists(path)) sprintf(path, ASSETS_PATH "/screenshot-%i.png", screen);
 
 	SDL_Log("preview: %s (snap: %i)", path, snap);
@@ -1857,6 +1864,63 @@ static void App_OSD(char* label, int value, int max) {
 	}
 }
 
+static struct {
+  int slot;
+} game_settings = {
+  .slot = 0,
+};
+
+static void GameSettings_reinit() {
+  game_settings.slot = 0;
+}
+
+static void GameSettings_load(int game) {
+  char game_name[MAX_FILE];
+  strcpy(game_name, app.items[game].name);
+  char *dot = strrchr(game_name, '.');
+  if (dot && dot!=game_name) *dot = '\0';
+
+  char path[MAX_PATH];
+  sprintf(path, USERDATA_PATH "/game_settings/%s.bin", game_name);
+
+  // initialize the game settings, if they can be read, overwrite
+  GameSettings_reinit();
+
+  if (access(path, F_OK)!=0) return;
+  FILE* file = fopen(path, "rb");
+  if (!file) return;
+  int size = 0;
+  fread(&size, sizeof(size), 1, file);
+  // file thinks it has more data than it should
+  if (size > sizeof(game_settings)) return;
+  // only read the amount of data the file says it has - safer read
+  fread(&game_settings, size, 1, file);
+  fclose(file);
+}
+static void GameSettings_save(int game) {
+  char game_name[MAX_FILE];
+  strcpy(game_name, app.items[game].name);
+  char *dot = strrchr(game_name, '.');
+  if (dot && dot!=game_name) *dot = '\0';
+
+  char path[MAX_PATH];
+  sprintf(path, USERDATA_PATH "/game_settings/%s.bin", game_name);
+
+  char dir[MAX_PATH];
+  strncpy(dir, path, MAX_PATH);
+  dir[MAX_PATH - 1] = '\0';
+  char *slash = strrchr(dir, '/');
+  *slash = '\0';
+  mkdir(dir, 0755);
+
+  FILE* file = fopen(path, "wb");
+  if (!file) return;
+  // in case I want to add new settings later, enables safer read
+  int size = sizeof(game_settings);
+  fwrite(&size, sizeof(size), 1, file) && fwrite(&game_settings, size, 1, file);
+  fclose(file);
+}
+
 static void App_menu(void) {
 	SDL_Log("enter menu");
 
@@ -1869,8 +1933,9 @@ static void App_menu(void) {
 	static int was_charging = 0;
 	
 	int current = app.current;
-	App_screenshot(current, 0, SNAP_CURRENT);
-	App_screenshot(current, 1, SNAP_CURRENT);
+  GameSettings_load(current);
+	App_screenshot(current, 0, 0, SNAP_CURRENT);
+	App_screenshot(current, 0, 1, SNAP_CURRENT);
 	
 	SDL_Surface* tmp;
 	if (!app.overlay) {
@@ -1920,7 +1985,6 @@ static void App_menu(void) {
 	SDL_Event event;
 	int mode = MODE_MENU;
 	int last_osd = app.osd;
-	int selected_slot=0;
 	while (in_menu) {
 		
 		if (osd_at+1000<SDL_GetTicks()) app.osd = OSD_NONE;
@@ -1954,11 +2018,13 @@ static void App_menu(void) {
 					if (btn==JOY_RIGHT) {
 						selected = 0;
 						current = App_next(current, +1);
+            GameSettings_load(current);
 						dirty = 1;
 					}
 					else if (btn==JOY_LEFT) {
 						selected = 0;
 						current = App_next(current, -1);
+            GameSettings_load(current);
 						dirty = 1;
 					}
 				
@@ -1975,10 +2041,23 @@ static void App_menu(void) {
 					else if (btn==JOY_A) { // SELECT
 						if (current==app.current) {
 							if (selected==0) { // SAVE
-								App_save();
+                GameSettings_save(app.current);
+								App_save(game_settings.slot);
 							}
 							else if (selected==1) { // LOAD
-								App_load();
+                GameSettings_save(app.current);
+                // TODO: ewwwwwwwwwwww
+                char game_name[MAX_FILE];
+                strcpy(game_name, app.items[current].name);
+                char *dot = strrchr(game_name, '.');
+                if (dot && dot!=game_name) *dot = '\0';
+                char path[MAX_PATH];
+                sprintf(path, USERDATA_PATH "/screenshots/%s-%i-0.bmp", game_name, game_settings.slot);
+                if (!exists(path)) {
+                  App_reset();
+                } else {
+                  App_load(game_settings.slot);
+                }
 							}
 							else if (selected==2) { // ARCHIVE
 								mode = MODE_ARCHIVE;
@@ -1992,8 +2071,9 @@ static void App_menu(void) {
 						}
 						else {
 							if (selected==0) { // LOAD
-								App_save();
+								App_save(0);
 								App_set(current);
+                GameSettings_load(current);
 								Settings_save();
 							
 								drastic_audio_pause(0);
@@ -2011,17 +2091,17 @@ static void App_menu(void) {
 						}
 					} else if (btn == JOY_L1) {
             if (selected == 0 || (selected == 1 && current == app.current)) {
-              selected_slot-=1;
-              if (selected_slot < 0) {
-                selected_slot = NUMBER_OF(save_slots)-1;
+              game_settings.slot-=1;
+              if (game_settings.slot < 0) {
+                game_settings.slot = NUMBER_OF(save_slots)-1;
               }
               dirty = 1;
             }
           } else if (btn == JOY_R1) {
             if (selected == 0 || (selected == 1 && current == app.current)) {
-              selected_slot+=1;
-              if (selected_slot >= NUMBER_OF(save_slots)) {
-                selected_slot = 0;
+              game_settings.slot+=1;
+              if (game_settings.slot >= NUMBER_OF(save_slots)) {
+                game_settings.slot = 0;
               }
               dirty = 1;
             }
@@ -2139,8 +2219,8 @@ static void App_menu(void) {
 			}
 			
 			int snap = selected==3 ? SNAP_RESET : (current==app.current && selected==0 ? SNAP_CURRENT : SNAP_SAVE);
-			App_preview(current,0, snap);
-			App_preview(current,1, snap);
+			App_preview(current, game_settings.slot, 0, snap);
+			App_preview(current, game_settings.slot, 1, snap);
 			
 			App_sync(1);
 			// int dim = mode==MODE_MENU && (current==app.current ? selected==2 : selected==1);
@@ -2239,7 +2319,7 @@ static void App_menu(void) {
             int cur_w;
 
             Font_getTextSize(font16, slots[i], &cur_w, NULL);
-            if (i==selected_slot) {
+            if (i==game_settings.slot) {
               renderer = Font_renderText;
               color = DARK_COLOR;
               AA_rect(x+pw+(i-0.5)*pad+i*space+2,y-0.5*pad+2,cur_w+1*pad,bh+pad, 0, TRIAD_ALPHA(BLACK_TRIAD,0xff));
